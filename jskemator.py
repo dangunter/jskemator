@@ -18,8 +18,16 @@ def _scalars(x):
     """
     return all(map(lambda y: type(y) in _SCALARS, x))
 
-class JSkemator:
-    def __init__(self, json=None, schema=None, simple_lists=False):
+class Skema:
+    def __init__(self, json, schema=None, simple_lists=False):
+        """Create new schema skeleton.
+        
+        Args:
+            - `json` = JSON object, a dictionary.
+            - `schema` = Optional schema, a dictionary
+            - `simple_lists` = If True, do not generate schema items
+                               for each value in a list of scalars.
+        """
         self.obj, self.s = json, schema
         self._skip_list_scalars = not simple_lists
 
@@ -40,33 +48,21 @@ class JSkemator:
         return self._skemate(self.obj, self.s)
 
     def _skemate(self, o, s=None):
-        if isinstance(o, (list, tuple)):
-            return self._skemateList(o, s)
-        if isinstance(o, dict):
-            return self._skemateDict(o, s)
-        if isinstance(o, str):
-            return self._skemateStr(o, s)
-        if isinstance(o, int):
-            return self._skemateInt(o, s)
-        if isinstance(o, long):
-            return self._skemateLong(o, s)
-        if isinstance(o, float):
-            return self._skemateFloat(o, s)
-        if o == None:
-            return self._skemateNone(o, s)
-        if o == False:
-            return self._skemateFalse(o, s)
-        if o == True:
-            return self._skemateTrue(o, s)
-        raise ValueError("Unrecognized value for {}".format(o))
+        """Dispatch to appropriate processing function for the
+        type of the object `o`, pulling default values from the
+        existing schema `s`.
+        """
+        typestr = '_' + o.__class__.__name__
+        if not hasattr(self, typestr):
+            raise ValueError("Unrecognized type for {}".format(o))
+        return getattr(self, typestr)(o, s)
 
-    def _skemateDict(self, d, s):
-        "Process dict."
-        skema=self.set_defaults(s)
+    def _dict(self, d, s):
+        "Process a dict."
+        skema = self.set_defaults(s)
         skema['type'] = 'object'
         skema['properties'] = { }
         for key, value in d.items ():
-            #print "key > ", key
             if s is None:
                 new_s = None
             else:
@@ -75,8 +71,12 @@ class JSkemator:
             skema['properties'][key] = self._skemate(value, new_s)
         return skema
 
-    def _skemateList(self, l, s):
-        #print "_skemateList"
+    def _list(self, l, s):
+        """Process a list.
+        
+        If `simple_lists` was False in the constructor, then
+        do not recurse into lists that have only scalar values.
+        """
         skema=self.set_defaults(s)
         skema['type'] = 'array'
         if self._skip_list_scalars and _scalars(l):
@@ -86,30 +86,27 @@ class JSkemator:
             skema['properties'].append(self._skemate(value)) 
         return skema
 
-    def _skemateStr(self, strval, s):
-        #print "_skemateStr"
-        res=self.set_defaults(s)
-        res['type'] = 'string'
-        res['pattern'] = ''
-        res['value'] = strval
-        return res
+    _tuple = _list
+    
+    def _str(self, v, s):
+        "Process a string."
+        return _scalar("string", v, s)
 
-    def _skemateInt(self, i, s):
-        #print "_skemateInt"
-        res=self.set_defaults(s)
-        res['type'] = 'integer'
-        res['pattern'] = ''
-        res['value'] = i
-        return res
+    def _int(self, v, s):
+        "Process an integer"
+        return _scalar("integer", v, s)
 
-    def _skemateFloat(self, f, s):
-        #print "_skemateFloat"
-        res=self.set_defaults(s)
-        res['type'] = 'float'
-        res['pattern'] = ''
-        res['value'] = f
-        return res
+    def _float(self, v, s):
+        "Process a float"
+        return _scalar("float", v, s)
         
+    def _scalar(self, typename, val, schema):
+        res = self.set_defaults(schema)
+        res['type'] = typename
+        res['pattern'] = ''
+        res['value'] = val
+        return res
+
 def main(argv):
     """Process command-line options and run.
     """
